@@ -1,0 +1,9 @@
+# LFX Mentorship – Python dependencies
+# Install: pip install -r requirements.txt
+
+httpx>=0.27.0      # async HTTP client (scraper)
+pandas>=2.2.0      # CSV output + data manipulation
+rich>=13.7.0       # terminal UI for scraper (live dashboard, progress bars)
+tenacity>=8.3.0    # retry logic with exponential back-off
+streamlit>=1.35.0  # web dashboard (app.py)
+plotly>=5.20.0     # charts in the web dashboard
