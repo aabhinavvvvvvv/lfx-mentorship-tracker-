@@ -359,7 +359,7 @@ def term2_tab():
         )
         state_filter = st.multiselect(
             "Issue state", ["open", "closed"],
-            default=["open"],
+            default=["open", "closed"],
         )
         st.divider()
         st.caption(f"Total issues found: **{len(issues)}**")
