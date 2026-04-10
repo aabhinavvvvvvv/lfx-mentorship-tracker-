@@ -111,6 +111,22 @@ section[data-testid="stSidebar"] { background: #161b22; border-right: 1px solid 
 
 /* ── No-mentee note ── */
 .no-mentee { font-size: 0.82rem; color: #6e7681; font-style: italic; padding: 6px 0; }
+
+/* ── Term 2 issue card ── */
+.issue-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+}
+.issue-title { font-size: 0.95rem; font-weight: 600; color: #e6edf3; margin-bottom: 4px; }
+.issue-meta  { font-size: 0.78rem; color: #8b949e; }
+.issue-meta a { color: #58a6ff; text-decoration: none; margin-right: 12px; }
+.badge-high   { background:#0d2c1a; color:#3fb950; border:1px solid #238636; }
+.badge-medium { background:#2d2208; color:#d29922; border:1px solid #9e6a03; }
+.badge-open   { background:#0c2d1a; color:#3fb950; border:1px solid #2ea043; }
+.badge-closed { background:#21262d; color:#8b949e; border:1px solid #30363d; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -279,6 +295,126 @@ def sidebar(df: pd.DataFrame):
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+def term1_tab(df: pd.DataFrame):
+    selected_orgs, india_only, name_search = sidebar(df)
+
+    view = df[df["org"].isin(selected_orgs)].copy()
+    if india_only:
+        view = view[view["is_indian"] == True]
+    if name_search.strip():
+        q    = name_search.strip().lower()
+        view = view[view["mentee_name"].str.lower().str.contains(q, na=False)]
+
+    if view.empty:
+        st.warning("No results match the current filters.")
+        return
+
+    for org in [o for o in selected_orgs if o in view["org"].values]:
+        org_df  = view[view["org"] == org]
+        n_proj  = org_df["proj_key"].nunique()
+        n_india = int(org_df["is_indian"].eq(True).sum())
+
+        st.markdown(
+            f'<div class="org-block">'
+            f'  <div class="org-name">{org}</div>'
+            f'  <div class="org-meta">'
+            f'    {n_proj} project{"s" if n_proj!=1 else ""}'
+            f'    &nbsp;·&nbsp; {n_india} 🇮🇳 Indian mentees detected'
+            f'  </div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        for proj_key, proj_df in org_df.groupby("proj_key"):
+            st.markdown(project_block(proj_key, proj_df), unsafe_allow_html=True)
+
+
+def term2_tab():
+    watch_file = "term2_issues.json"
+
+    if not Path(watch_file).exists():
+        st.info(
+            "**No Term 2 watch data yet.**  \n"
+            "Run the watcher to scan all repos:\n"
+            "```bash\npython watch.py --github-token $GITHUB_TOKEN\n```"
+        )
+        return
+
+    data   = json.loads(Path(watch_file).read_text(encoding="utf-8"))
+    issues = pd.DataFrame(data) if data else pd.DataFrame()
+
+    if issues.empty:
+        st.warning(
+            "No potential Term 2 issues found yet.  \n"
+            "Run `python watch.py` again closer to when applications open."
+        )
+        return
+
+    # ── Sidebar filters ───────────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("## 👀 Term 2 Watch")
+        st.divider()
+        conf_filter = st.multiselect(
+            "Confidence", ["high", "medium"],
+            default=["high", "medium"],
+        )
+        state_filter = st.multiselect(
+            "Issue state", ["open", "closed"],
+            default=["open"],
+        )
+        st.divider()
+        st.caption(f"Total issues found: **{len(issues)}**")
+        st.caption(f"High confidence: **{(issues['confidence']=='high').sum()}**")
+
+    view = issues[
+        issues["confidence"].isin(conf_filter) &
+        issues["state"].isin(state_filter)
+    ].copy()
+
+    if view.empty:
+        st.warning("No issues match the current filters.")
+        return
+
+    # Group by org
+    for org, grp in view.groupby("org_name"):
+        st.markdown(
+            f'<div class="org-block">'
+            f'  <div class="org-name">{org}</div>'
+            f'  <div class="org-meta">{len(grp)} potential Term 2 issue{"s" if len(grp)!=1 else ""}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        for _, row in grp.iterrows():
+            conf_cls  = "badge-high"   if row["confidence"] == "high"   else "badge-medium"
+            state_cls = "badge-open"   if row["state"]      == "open"   else "badge-closed"
+            lfx_link  = (
+                f'<a href="{row["lfx_url"]}" target="_blank">🌐 LFX Project</a>'
+                if row.get("lfx_url") else ""
+            )
+            labels = (
+                f'<span style="color:#6e7681">🏷 {row["labels"]}</span>'
+                if row.get("labels") else ""
+            )
+            html = (
+                f'<div class="issue-card">'
+                f'  <div class="issue-title">'
+                f'    <span class="badge {conf_cls}" style="margin-right:8px">{row["confidence"]}</span>'
+                f'    <a href="{row["issue_url"]}" target="_blank" style="color:#e6edf3;text-decoration:none">'
+                f'      {row["issue_title"]}'
+                f'    </a>'
+                f'  </div>'
+                f'  <div class="issue-meta" style="margin-top:6px">'
+                f'    <a href="{row["issue_url"]}" target="_blank">🔗 #{row["issue_number"]}</a>'
+                f'    {lfx_link}'
+                f'    <span style="color:#6e7681">{row["repo"]}</span>'
+                f'    &nbsp;·&nbsp; {row["created_at"]}'
+                f'    &nbsp;·&nbsp; <span class="badge {state_cls}">{row["state"]}</span>'
+                f'    {labels}'
+                f'  </div>'
+                f'</div>'
+            )
+            st.markdown(html, unsafe_allow_html=True)
+
+
 def main():
     results_file = "results.json"
     if not Path(results_file).exists():
@@ -291,56 +427,25 @@ def main():
 
     df = load(results_file)
 
-    # ── Header ───────────────────────────────────────────────────────────────
     st.markdown("""
     <div style="padding:20px 0 10px">
         <span style="font-size:1.8rem;font-weight:800;color:#e6edf3">
             🌏 LFX Mentorship Tracker
         </span><br>
         <span style="font-size:0.9rem;color:#8b949e">
-            CNCF · 2026 Mar–May Cohort &nbsp;·&nbsp;
-            Organisation → Project → Mentee
+            CNCF · Organisation → Project → Mentee
         </span>
     </div>
     """, unsafe_allow_html=True)
     st.divider()
 
-    # ── Sidebar ───────────────────────────────────────────────────────────────
-    selected_orgs, india_only, name_search = sidebar(df)
+    tab1, tab2 = st.tabs(["📋 2026 Term 1 — Mar–May", "👀 Term 2 Watch"])
 
-    # ── Filter ───────────────────────────────────────────────────────────────
-    view = df[df["org"].isin(selected_orgs)].copy()
-    if india_only:
-        view = view[view["is_indian"] == True]
-    if name_search.strip():
-        q    = name_search.strip().lower()
-        view = view[view["mentee_name"].str.lower().str.contains(q, na=False)]
+    with tab1:
+        term1_tab(df)
 
-    if view.empty:
-        st.warning("No results match the current filters.")
-        st.stop()
-
-    # ── Org loop ──────────────────────────────────────────────────────────────
-    for org in [o for o in selected_orgs if o in view["org"].values]:
-        org_df  = view[view["org"] == org]
-        n_proj  = org_df["proj_key"].nunique()
-        n_india = int(org_df["is_indian"].eq(True).sum())
-
-        # Org header
-        st.markdown(
-            f'<div class="org-block">'
-            f'  <div class="org-name">{org}</div>'
-            f'  <div class="org-meta">'
-            f'    {n_proj} project{"s" if n_proj!=1 else ""}'
-            f'    &nbsp;·&nbsp; {n_india} 🇮🇳 Indian applicants detected'
-            f'  </div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Projects within this org
-        for proj_key, proj_df in org_df.groupby("proj_key"):
-            st.markdown(project_block(proj_key, proj_df), unsafe_allow_html=True)
+    with tab2:
+        term2_tab()
 
 
 if __name__ == "__main__":
